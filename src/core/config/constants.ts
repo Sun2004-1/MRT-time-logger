@@ -2,7 +2,7 @@ import { StationInfo } from '../types/trip.types';
 
 export const APP_CONFIG = {
   APP_NAME: 'MRT Time Logger',
-  VERSION: '1.0.0',
+  VERSION: '1.1.0',
   DB_NAME: 'mrt_logger_db',
   DB_VERSION: 1,
   STORE_NAME: 'trips',
@@ -32,30 +32,38 @@ export const DEFAULT_COMMUTE = {
   },
 } as const;
 
+export const QUICK_TAGS = [
+  '🌧️ ฝนตก',
+  '⏳ รถทิ้งช่วงนาน',
+  '⚠️ รอสัญญาณ',
+  '👥 ชานชาลาคนล้น',
+  '❄️ แอร์เย็นมาก',
+] as const;
+
 export const CROWD_LABELS: Record<string, { label: string; emoji: string; color: string; badgeClass: string }> = {
   low: {
     label: 'โล่ง (มีที่นั่ง)',
     emoji: '🟢',
     color: '#64836B',
-    badgeClass: 'bg-emerald-950/60 text-emerald-300 border-emerald-700/40',
+    badgeClass: 'bg-emerald-950/40 text-emerald-300 border-emerald-700/30',
   },
   medium: {
     label: 'ปานกลาง (ยืนสบาย)',
     emoji: '🟡',
     color: '#C9974C',
-    badgeClass: 'bg-amber-950/60 text-amber-300 border-amber-700/40',
+    badgeClass: 'bg-amber-950/40 text-amber-300 border-amber-700/30',
   },
   high: {
-    label: 'แน่นมาก (เบียด/รอขบวนถัดไป)',
+    label: 'แน่นมาก (เบียด)',
     emoji: '🔴',
     color: '#C25745',
-    badgeClass: 'bg-rose-950/60 text-rose-300 border-rose-700/40',
+    badgeClass: 'bg-rose-950/40 text-rose-300 border-rose-700/30',
   },
   unspecified: {
     label: 'ยังไม่ระบุ',
     emoji: '⚪',
     color: '#A89E93',
-    badgeClass: 'bg-stone-800/60 text-stone-400 border-stone-700/40',
+    badgeClass: 'bg-stone-800/40 text-stone-400 border-stone-700/30',
   },
 };
 

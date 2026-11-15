@@ -44,13 +44,26 @@ class App {
       onEditTrip: (trip: TripLog) => {
         this.openMetadataEditor(trip);
       },
+      onCrowdUpdated: async (trip: TripLog, crowd: CrowdLevel) => {
+        await this.historyService.updateDeferredMetadata(trip.id, crowd, trip.notes || '');
+      },
     });
 
     this.historyView = new HistoryView('tab-view-history', this.historyService, (trip: TripLog) => {
       this.openMetadataEditor(trip);
     });
 
-    this.exportView = new ExportView('tab-view-export', this.exportService, this.syncService);
+    this.exportView = new ExportView(
+      'tab-view-export',
+      this.exportService,
+      this.syncService,
+      async () => {
+        // When data restored from JSON backup
+        await this.historyView.loadAndRender();
+        const recent = await this.historyService.getRecentTrips(1);
+        this.quickSnapView.setLastLoggedTrip(recent[0] || null);
+      }
+    );
 
     // Initialize TabBar
     this.tabBar = new TabBar('app-tab-bar-container', (tab: TabKey) => {

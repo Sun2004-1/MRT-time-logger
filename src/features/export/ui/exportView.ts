@@ -5,15 +5,18 @@ import { triggerHaptic } from '@/core/utils/haptic';
 
 export class ExportView {
   private container: HTMLElement;
+  private onDataRestoredCallback: (() => Promise<void>) | null = null;
 
   constructor(
     containerId: string,
     private exportService: ExportService,
-    private syncService: GoogleSheetsSyncService
+    private syncService: GoogleSheetsSyncService,
+    onDataRestored?: () => Promise<void>
   ) {
     const el = document.getElementById(containerId);
     if (!el) throw new Error(`Container #${containerId} not found`);
     this.container = el;
+    this.onDataRestoredCallback = onDataRestored || null;
     this.render();
   }
 
@@ -21,14 +24,14 @@ export class ExportView {
     const webhookUrl = this.syncService.getWebhookUrl();
 
     this.container.innerHTML = `
-      <div class="max-w-md mx-auto px-5 py-4 safe-top pb-28 space-y-6">
+      <div class="max-w-md mx-auto px-5 py-4 safe-top pb-28 space-y-5">
         <div>
           <h2 class="text-xl font-bold text-[#FAF5EE]">ซิงก์ & ส่งออกข้อมูล</h2>
           <p class="text-xs text-[#A89E93]">สำรองข้อมูลไปยัง Google Sheets หรือดาวน์โหลดไฟล์</p>
         </div>
 
         <!-- Google Sheets Cloud Sync Section -->
-        <div class="bg-[#231E1B] border border-white/5 rounded-3xl p-5 shadow-xl space-y-4">
+        <div class="bg-[#231E1B] border border-white/5 rounded-3xl p-5 shadow-xl space-y-3.5">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2.5">
               <span class="w-8 h-8 rounded-xl bg-emerald-950/60 border border-emerald-700/40 text-emerald-400 flex items-center justify-center text-sm font-bold">📊</span>
@@ -46,7 +49,7 @@ export class ExportView {
 
           <!-- Webhook input -->
           <div>
-            <label class="block text-[11px] font-medium text-[#A89E93] mb-1.5 uppercase tracking-wider">
+            <label class="block text-[11px] font-medium text-[#A89E93] mb-1 uppercase tracking-wider">
               Google Apps Script Webhook URL
             </label>
             <input
@@ -79,7 +82,7 @@ export class ExportView {
               2. วางโค้ดนี้แทนที่ทั้งหมด แล้วกด <b>Deploy ➔ New deployment ➔ Web app</b> (ตั้ง Who has access: <b>Anyone</b>)<br>
               3. นำ URL ที่ได้มาใส่ในช่องด้านบน
             </p>
-            <pre class="text-[10px] text-[#A89E93] font-mono p-2 bg-[#231E1B] rounded-xl overflow-x-auto max-h-40">${GoogleSheetsSyncService.getGoogleAppsScriptTemplate()}</pre>
+            <pre class="text-[10px] text-[#A89E93] font-mono p-2 bg-[#231E1B] rounded-xl overflow-x-auto max-h-36">${GoogleSheetsSyncService.getGoogleAppsScriptTemplate()}</pre>
           </div>
 
           <!-- Sync Trigger Button -->
@@ -92,42 +95,65 @@ export class ExportView {
           </button>
         </div>
 
-        <!-- File Exports Section -->
-        <div class="bg-[#231E1B] border border-white/5 rounded-3xl p-5 shadow-xl space-y-4">
+        <!-- File Exports & Backup Section -->
+        <div class="bg-[#231E1B] border border-white/5 rounded-3xl p-5 shadow-xl space-y-3.5">
           <div class="flex items-center gap-2.5">
             <span class="w-8 h-8 rounded-xl bg-amber-950/60 border border-amber-700/40 text-amber-400 flex items-center justify-center text-sm font-bold">📥</span>
             <div>
-              <h3 class="text-sm font-semibold text-[#FAF5EE]">ดาวน์โหลดชุดข้อมูล</h3>
-              <p class="text-[11px] text-[#A89E93]">นำไฟล์ไปเปิดบน Excel, Numbers, หรือส่งเข้า Line</p>
+              <h3 class="text-sm font-semibold text-[#FAF5EE]">ดาวน์โหลด & สำรองข้อมูล (Backup)</h3>
+              <p class="text-[11px] text-[#A89E93]">นำไฟล์ไปเปิดบน Excel หรือสำรองฐานข้อมูล</p>
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-3 pt-1">
+          <div class="grid grid-cols-2 gap-2.5 pt-1">
             <button
               id="export-csv-btn"
-              class="p-4 rounded-2xl bg-[#2E2723] hover:bg-[#3B322D] border border-white/5 active:scale-95 text-left transition-all group"
+              class="p-3.5 rounded-2xl bg-[#2E2723] hover:bg-[#3B322D] border border-white/5 active:scale-95 text-left transition-all"
             >
-              <div class="text-xl mb-1 group-hover:scale-110 transition-transform">📄</div>
-              <div class="text-xs font-semibold text-[#FAF5EE]">ดาวน์โหลด CSV</div>
-              <div class="text-[10px] text-[#A89E93] mt-0.5">UTF-8 BOM ภาษาไทยสมบูรณ์</div>
+              <div class="text-lg mb-1">📄</div>
+              <div class="text-xs font-semibold text-[#FAF5EE]">ส่งออก CSV</div>
+              <div class="text-[10px] text-[#A89E93] mt-0.5">UTF-8 ภาษาไทยสมบูรณ์</div>
             </button>
 
             <button
               id="export-xlsx-btn"
-              class="p-4 rounded-2xl bg-[#2E2723] hover:bg-[#3B322D] border border-white/5 active:scale-95 text-left transition-all group"
+              class="p-3.5 rounded-2xl bg-[#2E2723] hover:bg-[#3B322D] border border-white/5 active:scale-95 text-left transition-all"
             >
-              <div class="text-xl mb-1 group-hover:scale-110 transition-transform">📗</div>
-              <div class="text-xs font-semibold text-[#FAF5EE]">ดาวน์โหลด Excel</div>
+              <div class="text-lg mb-1">📗</div>
+              <div class="text-xs font-semibold text-[#FAF5EE]">ส่งออก Excel</div>
               <div class="text-[10px] text-[#A89E93] mt-0.5">ไฟล์ .xlsx สำเร็จรูป</div>
             </button>
+
+            <!-- JSON Backup Button -->
+            <button
+              id="export-json-backup-btn"
+              class="p-3.5 rounded-2xl bg-[#2E2723] hover:bg-[#3B322D] border border-white/5 active:scale-95 text-left transition-all"
+            >
+              <div class="text-lg mb-1">💾</div>
+              <div class="text-xs font-semibold text-[#FAF5EE]">สำรองข้อมูล JSON</div>
+              <div class="text-[10px] text-[#A89E93] mt-0.5">Snapshot ทั้งหมดของแอป</div>
+            </button>
+
+            <!-- JSON Restore Button -->
+            <button
+              id="restore-json-btn"
+              class="p-3.5 rounded-2xl bg-[#2E2723] hover:bg-[#3B322D] border border-white/5 active:scale-95 text-left transition-all"
+            >
+              <div class="text-lg mb-1">🔄</div>
+              <div class="text-xs font-semibold text-[#FAF5EE]">กู้คืนข้อมูล JSON</div>
+              <div class="text-[10px] text-[#A89E93] mt-0.5">นำเข้าไฟล์สำรองที่เคยบันทึก</div>
+            </button>
+            <input type="file" id="restore-json-input" accept=".json" class="hidden" />
           </div>
         </div>
 
-        <!-- About & Storage Info -->
-        <div class="text-center pt-2">
+        <!-- System & Downgrade Info -->
+        <div class="text-center pt-2 space-y-1">
           <p class="text-[11px] text-[#A89E93]">
-            MRT Time Logger v1.0 • Offline-First PWA<br>
-            ข้อมูลทั้งหมดถูกบันทึกใน IndexedDB บนเครื่องของคุณ
+            MRT Time Logger v1.1 • Git Commit Tag: <span class="font-mono text-[#FAF5EE]">v1.0.0-stable</span>
+          </p>
+          <p class="text-[10px] text-[#A89E93]/70">
+            ระบบรองรับการดาวน์เกรดย้อนกลับเวอร์ชันก่อนหน้าได้ 100% ตลอดเวลา
           </p>
         </div>
 
@@ -205,6 +231,44 @@ export class ExportView {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการส่งออก';
         Toast.show(msg, 'error');
+      }
+    });
+
+    // Export JSON Backup
+    this.container.querySelector('#export-json-backup-btn')?.addEventListener('click', async () => {
+      try {
+        triggerHaptic('light');
+        await this.exportService.exportJsonBackup();
+        Toast.show('สร้างไฟล์สำรองข้อมูล JSON เรียบร้อย', 'success');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการสำรองข้อมูล';
+        Toast.show(msg, 'error');
+      }
+    });
+
+    // Restore JSON Backup
+    const fileInput = this.container.querySelector('#restore-json-input') as HTMLInputElement;
+    this.container.querySelector('#restore-json-btn')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      fileInput?.click();
+    });
+
+    fileInput?.addEventListener('change', async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const count = await this.exportService.restoreJsonBackup(text);
+        Toast.show(`กู้คืนข้อมูลสำเร็จ ${count} รายการ`, 'success');
+        if (this.onDataRestoredCallback) {
+          await this.onDataRestoredCallback();
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'ไฟล์ JSON ไม่ถูกต้อง';
+        Toast.show(msg, 'error');
+      } finally {
+        fileInput.value = '';
       }
     });
   }

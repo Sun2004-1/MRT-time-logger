@@ -65,7 +65,6 @@ export class ExportService {
     const rows = trips.map((t: TripLog) => this.mapTripToExportRow(t));
     const worksheet = XLSX.utils.json_to_sheet(rows);
 
-    // Auto-fit column widths
     const colWidths = Object.keys(rows[0]).map((key) => ({
       wch: Math.max(key.length * 2, 16),
     }));
@@ -80,6 +79,49 @@ export class ExportService {
     });
 
     this.downloadFile(blob, `mrt_time_logs_${this.getExportDateStr()}.xlsx`);
+  }
+
+  /**
+   * Backup all data to a JSON snapshot
+   */
+  public async exportJsonBackup(): Promise<void> {
+    const trips = await this.repository.getAll();
+    const backupData = {
+      app: 'MRT Time Logger',
+      version: '1.1.0',
+      exportedAt: new Date().toISOString(),
+      totalRecords: trips.length,
+      trips,
+    };
+
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], {
+      type: 'application/json',
+    });
+    this.downloadFile(blob, `mrt_backup_${this.getExportDateStr()}.json`);
+  }
+
+  /**
+   * Restore trips from JSON backup
+   */
+  public async restoreJsonBackup(jsonString: string): Promise<number> {
+    const parsed = JSON.parse(jsonString);
+    const trips: TripLog[] = Array.isArray(parsed) ? parsed : parsed.trips;
+
+    if (!Array.isArray(trips)) {
+      throw new Error('รูปแบบไฟล์สำรองข้อมูล JSON ไม่ถูกต้อง');
+    }
+
+    let restoredCount = 0;
+    for (const trip of trips) {
+      if (trip.id && trip.time && trip.station) {
+        await this.repository.create(trip).catch(() => {
+          // If already exists, update
+          return this.repository.update(trip.id, trip);
+        });
+        restoredCount++;
+      }
+    }
+    return restoredCount;
   }
 
   private downloadFile(blob: Blob, filename: string): void {

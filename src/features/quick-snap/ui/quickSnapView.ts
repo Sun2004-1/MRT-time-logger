@@ -9,10 +9,11 @@ export class QuickSnapView {
   private container: HTMLElement;
   private stationModal: StationPickerModal;
   private clockInterval: number | null = null;
-  private selectedCrowd: CrowdLevel = 'unspecified';
   private onRecordLoggedCallback: ((trip: TripLog) => void) | null = null;
   private onEditTripCallback: ((trip: TripLog) => void) | null = null;
+  private onCrowdUpdatedCallback: ((trip: TripLog, crowd: CrowdLevel) => Promise<void>) | null = null;
   private lastLoggedTrip: TripLog | null = null;
+  private snapFeedbackTimeout: number | null = null;
 
   constructor(
     containerId: string,
@@ -20,6 +21,7 @@ export class QuickSnapView {
     callbacks: {
       onRecordLogged?: (trip: TripLog) => void;
       onEditTrip?: (trip: TripLog) => void;
+      onCrowdUpdated?: (trip: TripLog, crowd: CrowdLevel) => Promise<void>;
     } = {}
   ) {
     const el = document.getElementById(containerId);
@@ -28,12 +30,13 @@ export class QuickSnapView {
     this.stationModal = new StationPickerModal();
     this.onRecordLoggedCallback = callbacks.onRecordLogged || null;
     this.onEditTripCallback = callbacks.onEditTrip || null;
+    this.onCrowdUpdatedCallback = callbacks.onCrowdUpdated || null;
     this.render();
   }
 
   public setLastLoggedTrip(trip: TripLog | null): void {
     this.lastLoggedTrip = trip;
-    this.updateLastLoggedBanner();
+    this.updateDeferredCard();
   }
 
   public render(): void {
@@ -41,121 +44,102 @@ export class QuickSnapView {
     const isMorning = route.tripType === 'morning';
 
     this.container.innerHTML = `
-      <div class="flex flex-col h-full justify-between max-w-md mx-auto px-5 py-4 safe-top pb-28">
+      <div class="flex flex-col h-[calc(100vh-64px)] justify-between max-w-md mx-auto px-5 py-4 safe-top pb-6">
         
-        <!-- Header Info & Clock -->
-        <div class="space-y-4">
-          <!-- Top Tag -->
-          <div class="flex items-center justify-between">
+        <!-- Top Section: Minimalist Header & Live Clock -->
+        <div class="space-y-4 pt-1">
+          <!-- Top subtle commute indicator -->
+          <div class="flex items-center justify-between text-xs text-[#A89E93]">
             <div class="flex items-center gap-2">
-              <span class="inline-block w-2.5 h-2.5 rounded-full bg-[#64836B] animate-pulse"></span>
-              <span class="text-xs font-semibold tracking-wider uppercase text-[#A89E93]">MRT Blue Line Precision</span>
+              <span class="w-2 h-2 rounded-full bg-[#64836B]"></span>
+              <span class="font-medium tracking-wide">MRT Blue Line</span>
             </div>
-            <span id="live-trip-tag" class="text-xs px-2.5 py-1 rounded-full font-medium ${
+            <span id="route-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
               isMorning
                 ? 'bg-[#64836B]/20 text-[#64836B] border border-[#64836B]/30'
                 : 'bg-[#C9974C]/20 text-[#C9974C] border border-[#C9974C]/30'
             }">
-              ${isMorning ? '🌅 เที่ยวเช้า (ไปทำงาน)' : '🌇 เที่ยวเย็น (กลับบ้าน)'}
+              ${isMorning ? '🌅 ช่วงเช้า' : '🌇 ช่วงเย็น'}
             </span>
           </div>
 
-          <!-- Live Digital Clock -->
+          <!-- Clean Hero Digital Clock -->
           <div class="text-center py-2">
-            <div id="live-clock-time" class="text-5xl sm:text-6xl font-bold font-mono tracking-tight text-[#FAF5EE] tnum">
+            <div id="live-clock-time" class="text-6xl font-extrabold font-mono tracking-tight text-[#FAF5EE] tnum drop-shadow-sm">
               --:--:--
             </div>
-            <div id="live-clock-date" class="text-xs font-medium text-[#A89E93] mt-1 tracking-wide">
-              กำลังเชื่อมต่อเวลาจริง...
+            <div id="live-clock-date" class="text-xs text-[#A89E93] mt-1.5 font-medium tracking-wide">
+              กำลังโหลดเวลา...
             </div>
           </div>
 
-          <!-- Station Selector Card -->
-          <div class="bg-[#231E1B] border border-white/5 rounded-3xl p-4 shadow-xl">
-            <div class="flex items-center justify-between gap-3">
+          <!-- Minimalist Inset Route Pill -->
+          <div class="bg-[#231E1B]/90 backdrop-blur-xl border border-white/5 rounded-2xl p-3 shadow-lg">
+            <div class="flex items-center justify-between gap-2">
               <!-- Origin Station -->
-              <button id="origin-station-btn" class="flex-1 text-left group">
-                <div class="text-[11px] font-medium text-[#A89E93] uppercase tracking-wider mb-0.5">สถานีต้นทาง (ที่ขึ้น)</div>
-                <div class="flex items-baseline gap-1.5">
-                  <span id="origin-name" class="text-lg font-semibold text-[#FAF5EE] group-hover:text-[#C86D51] transition-colors">${route.origin}</span>
-                  <span id="origin-code" class="text-xs font-mono font-bold text-[#C86D51] bg-[#3B322D] px-1.5 py-0.5 rounded">${route.originCode}</span>
+              <button id="origin-station-btn" class="flex-1 text-left py-1 px-2 rounded-xl hover:bg-white/5 transition-all">
+                <div class="text-[10px] text-[#A89E93] uppercase font-semibold">ต้นทาง</div>
+                <div class="text-base font-semibold text-[#FAF5EE] flex items-center gap-1.5 mt-0.5 truncate">
+                  <span id="origin-name">${route.origin}</span>
+                  <span id="origin-code" class="text-[10px] font-mono text-[#C86D51] bg-[#3B322D] px-1 py-0.5 rounded">${route.originCode}</span>
                 </div>
               </button>
 
-              <!-- Swap Button [ ⇄ ] -->
+              <!-- Quick Swap Button -->
               <button
                 id="swap-route-btn"
-                title="สลับสถานีต้นทาง-ปลายทาง"
-                class="w-11 h-11 rounded-2xl bg-[#2E2723] hover:bg-[#3B322D] active:scale-90 border border-white/5 flex items-center justify-center text-lg text-[#C86D51] shadow transition-all"
+                title="สลับสถานี"
+                class="w-10 h-10 rounded-xl bg-[#2E2723] hover:bg-[#3B322D] active:rotate-180 border border-white/5 flex items-center justify-center text-sm font-bold text-[#C86D51] shadow transition-transform duration-300"
               >
                 ⇄
               </button>
 
               <!-- Destination Station -->
-              <button id="dest-station-btn" class="flex-1 text-right group">
-                <div class="text-[11px] font-medium text-[#A89E93] uppercase tracking-wider mb-0.5">สถานีปลายทาง</div>
-                <div class="flex items-baseline justify-end gap-1.5">
-                  <span id="dest-name" class="text-lg font-semibold text-[#FAF5EE] group-hover:text-[#C86D51] transition-colors">${route.destination}</span>
-                  <span id="dest-code" class="text-xs font-mono font-bold text-[#A89E93] bg-[#2E2723] px-1.5 py-0.5 rounded">${route.destinationCode}</span>
+              <button id="dest-station-btn" class="flex-1 text-right py-1 px-2 rounded-xl hover:bg-white/5 transition-all">
+                <div class="text-[10px] text-[#A89E93] uppercase font-semibold">ปลายทาง</div>
+                <div class="text-base font-semibold text-[#FAF5EE] flex items-center justify-end gap-1.5 mt-0.5 truncate">
+                  <span id="dest-name">${route.destination}</span>
+                  <span id="dest-code" class="text-[10px] font-mono text-[#A89E93] bg-[#2E2723] px-1 py-0.5 rounded">${route.destinationCode}</span>
                 </div>
               </button>
             </div>
 
-            <div class="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between text-xs text-[#A89E93]">
+            <!-- Direction caption -->
+            <div class="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-[#A89E93] px-2">
               <span id="direction-label" class="truncate">${route.directionLabel}</span>
-              <span class="text-[10px] text-[#A89E93]/70">แตะเพื่อเปลี่ยน</span>
+              <span class="text-[10px] text-[#A89E93]/60">แตะเพื่อเปลี่ยน</span>
             </div>
           </div>
         </div>
 
-        <!-- Center Shutter Action Button -->
-        <div class="flex flex-col items-center justify-center py-6">
+        <!-- Center: Hero Shutter Button (Uncluttered, Room to Breathe) -->
+        <div class="flex flex-col items-center justify-center my-auto py-4">
           <div class="relative flex items-center justify-center">
-            <!-- Outer Pulsing Glow Ring -->
-            <div class="absolute w-48 h-48 rounded-full bg-[#C86D51]/10 blur-xl animate-pulse pointer-events-none"></div>
+            <!-- Ambient Glow -->
+            <div class="absolute w-52 h-52 rounded-full bg-[#C86D51]/10 blur-2xl pointer-events-none"></div>
 
-            <!-- Concentric Shutter Button -->
+            <!-- Physical Shutter Button -->
             <button
               id="quick-snap-shutter-btn"
-              class="shutter-btn relative w-40 h-40 rounded-full bg-[#231E1B] border-4 border-[#3B322D] shadow-2xl flex flex-col items-center justify-center transition-all cursor-pointer focus:outline-none"
+              class="shutter-btn relative w-44 h-44 rounded-full bg-[#231E1B] border-[5px] border-[#3B322D] shadow-2xl flex flex-col items-center justify-center transition-all cursor-pointer focus:outline-none"
             >
-              <!-- Inner Ring -->
-              <div class="w-32 h-32 rounded-full bg-gradient-to-br from-[#C86D51] to-[#B85E42] flex flex-col items-center justify-center shadow-inner">
-                <svg class="w-10 h-10 text-white mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <!-- Core Button Disc -->
+              <div id="shutter-inner-disc" class="w-36 h-36 rounded-full bg-gradient-to-br from-[#C86D51] to-[#B85E42] flex flex-col items-center justify-center shadow-inner transition-colors duration-300">
+                <svg id="shutter-icon" class="w-11 h-11 text-white mb-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <circle cx="12" cy="12" r="9" stroke-width="2"></circle>
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 7v5l3 3"></path>
                 </svg>
-                <span class="text-xs font-bold tracking-wider text-white uppercase">TAP SNAP</span>
-                <span class="text-[10px] font-medium text-white/80">รถจอดเทียบ</span>
+                <span id="shutter-main-text" class="text-sm font-bold tracking-wider text-white uppercase">TAP SNAP</span>
+                <span id="shutter-sub-text" class="text-[10px] font-medium text-white/80">แตะเมื่อรถจอดเทียบ</span>
               </div>
             </button>
           </div>
-          <p class="text-xs text-[#A89E93] mt-3 tracking-wide">แตะ 1 ครั้งเมื่อหัวขบวนเทียบชานชาลา</p>
         </div>
 
-        <!-- Bottom: Optional Quick Crowd Selector & Recent Snap Banner -->
-        <div class="space-y-3">
-          <!-- Quick Crowd Selection -->
-          <div>
-            <div class="flex items-center justify-between text-xs text-[#A89E93] mb-1.5 px-1">
-              <span>ความหนาแน่น (เลือกได้ทันที หรือไปใส่บนรถ)</span>
-            </div>
-            <div class="grid grid-cols-3 gap-2" id="quick-crowd-grid">
-              <button type="button" data-crowd="low" class="quick-crowd-chip p-2.5 rounded-2xl bg-[#231E1B] border border-white/5 hover:border-white/20 text-xs font-medium text-[#FAF5EE] flex items-center justify-center gap-1.5 transition-all">
-                <span>🟢</span> <span>โล่ง</span>
-              </button>
-              <button type="button" data-crowd="medium" class="quick-crowd-chip p-2.5 rounded-2xl bg-[#231E1B] border border-white/5 hover:border-white/20 text-xs font-medium text-[#FAF5EE] flex items-center justify-center gap-1.5 transition-all">
-                <span>🟡</span> <span>ปานกลาง</span>
-              </button>
-              <button type="button" data-crowd="high" class="quick-crowd-chip p-2.5 rounded-2xl bg-[#231E1B] border border-white/5 hover:border-white/20 text-xs font-medium text-[#FAF5EE] flex items-center justify-center gap-1.5 transition-all">
-                <span>🔴</span> <span>แน่นมาก</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Last Logged Trip Banner -->
-          <div id="last-logged-banner" class="hidden bg-[#231E1B]/80 border border-[#64836B]/30 rounded-2xl p-3 flex items-center justify-between text-xs transition-all">
-            <!-- Content filled dynamically -->
+        <!-- Bottom: Deferred Floating Quick-Card (Appears only after snapping or when recent trip exists) -->
+        <div id="deferred-container" class="min-h-[72px] flex flex-col justify-end">
+          <div id="deferred-floating-card" class="hidden bg-[#231E1B] border border-white/10 rounded-2xl p-3.5 shadow-2xl transition-all duration-300">
+            <!-- Populated dynamically -->
           </div>
         </div>
 
@@ -164,7 +148,7 @@ export class QuickSnapView {
 
     this.bindEvents();
     this.startClock();
-    this.updateLastLoggedBanner();
+    this.updateDeferredCard();
   }
 
   private startClock(): void {
@@ -202,7 +186,7 @@ export class QuickSnapView {
     swapBtn?.addEventListener('click', () => {
       const newRoute = this.quickSnapService.swapRoute();
       this.updateRouteDisplay(newRoute);
-      Toast.show(`สลับเส้นทางเป็น ${newRoute.origin} ➔ ${newRoute.destination}`, 'info');
+      Toast.show(`สลับสถานีเป็น ${newRoute.origin} ➔ ${newRoute.destination}`, 'info');
     });
 
     // Origin picker
@@ -240,33 +224,6 @@ export class QuickSnapView {
         Toast.show(`เปลี่ยนสถานีปลายทางเป็น ${station.nameTh}`, 'info');
       });
     });
-
-    // Quick crowd selector chips
-    this.container.querySelectorAll('.quick-crowd-chip').forEach((chip) => {
-      chip.addEventListener('click', () => {
-        triggerHaptic('light');
-        const crowd = chip.getAttribute('data-crowd') as CrowdLevel;
-        if (this.selectedCrowd === crowd) {
-          this.selectedCrowd = 'unspecified';
-        } else {
-          this.selectedCrowd = crowd;
-        }
-        this.updateCrowdChips();
-      });
-    });
-  }
-
-  private updateCrowdChips(): void {
-    this.container.querySelectorAll('.quick-crowd-chip').forEach((chip) => {
-      const crowd = chip.getAttribute('data-crowd') as CrowdLevel;
-      if (this.selectedCrowd === crowd) {
-        chip.classList.add('bg-[#3B322D]', 'border-[#C86D51]', 'ring-1', 'ring-[#C86D51]');
-        chip.classList.remove('bg-[#231E1B]');
-      } else {
-        chip.classList.remove('bg-[#3B322D]', 'border-[#C86D51]', 'ring-1', 'ring-[#C86D51]');
-        chip.classList.add('bg-[#231E1B]');
-      }
-    });
   }
 
   private updateRouteDisplay(route: ReturnType<QuickSnapService['getRouteState']>): void {
@@ -275,7 +232,7 @@ export class QuickSnapView {
     const destName = this.container.querySelector('#dest-name');
     const destCode = this.container.querySelector('#dest-code');
     const dirLabel = this.container.querySelector('#direction-label');
-    const tripTag = this.container.querySelector('#live-trip-tag');
+    const routeBadge = this.container.querySelector('#route-badge');
 
     if (originName) originName.textContent = route.origin;
     if (originCode) originCode.textContent = route.originCode;
@@ -283,62 +240,130 @@ export class QuickSnapView {
     if (destCode) destCode.textContent = route.destinationCode;
     if (dirLabel) dirLabel.textContent = route.directionLabel;
 
-    if (tripTag) {
+    if (routeBadge) {
       const isMorning = route.tripType === 'morning';
-      tripTag.textContent = isMorning ? '🌅 เที่ยวเช้า (ไปทำงาน)' : '🌇 เที่ยวเย็น (กลับบ้าน)';
+      routeBadge.textContent = isMorning ? '🌅 ช่วงเช้า' : '🌇 ช่วงเย็น';
     }
   }
 
   private async handleQuickSnap(): Promise<void> {
     try {
-      const record = await this.quickSnapService.logArrival(this.selectedCrowd);
+      const record = await this.quickSnapService.logArrival('unspecified');
       this.lastLoggedTrip = record;
-      this.selectedCrowd = 'unspecified';
-      this.updateCrowdChips();
-      this.updateLastLoggedBanner();
 
-      Toast.show(`บันทึกเวลา ${record.time} น. ที่สถานี ${record.station} สำเร็จ!`, 'success');
+      // Visual Morph on Shutter button (Apple HIG confirmation)
+      this.showSnapSuccessFeedback(record);
+
+      Toast.show(`บันทึกเวลา ${record.time} น. (${record.station}) เรียบร้อย`, 'success');
 
       if (this.onRecordLoggedCallback) {
         this.onRecordLoggedCallback(record);
       }
+
+      this.updateDeferredCard();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการบันทึก';
       Toast.show(msg, 'error');
     }
   }
 
-  private updateLastLoggedBanner(): void {
-    const banner = this.container.querySelector('#last-logged-banner');
-    if (!banner) return;
+  private showSnapSuccessFeedback(record: TripLog): void {
+    const disc = this.container.querySelector('#shutter-inner-disc');
+    const mainText = this.container.querySelector('#shutter-main-text');
+    const subText = this.container.querySelector('#shutter-sub-text');
+    const icon = this.container.querySelector('#shutter-icon');
+
+    if (!disc || !mainText || !subText) return;
+
+    if (this.snapFeedbackTimeout) clearTimeout(this.snapFeedbackTimeout);
+
+    // Turn into Emerald Green Success state
+    disc.className = 'w-36 h-36 rounded-full bg-gradient-to-br from-[#64836B] to-[#4A6450] flex flex-col items-center justify-center shadow-inner transition-colors duration-300';
+    mainText.textContent = record.time;
+    subText.textContent = 'บันทึกสำเร็จ ✓';
+    if (icon) icon.classList.add('scale-110');
+
+    // Revert back after 3 seconds
+    this.snapFeedbackTimeout = window.setTimeout(() => {
+      disc.className = 'w-36 h-36 rounded-full bg-gradient-to-br from-[#C86D51] to-[#B85E42] flex flex-col items-center justify-center shadow-inner transition-colors duration-300';
+      mainText.textContent = 'TAP SNAP';
+      subText.textContent = 'แตะเมื่อรถจอดเทียบ';
+      if (icon) icon.classList.remove('scale-110');
+    }, 3000);
+  }
+
+  private updateDeferredCard(): void {
+    const card = this.container.querySelector('#deferred-floating-card');
+    if (!card) return;
 
     if (!this.lastLoggedTrip) {
-      banner.classList.add('hidden');
+      card.classList.add('hidden');
       return;
     }
 
     const t = this.lastLoggedTrip;
     const crowdInfo = CROWD_LABELS[t.crowdLevel] || CROWD_LABELS.unspecified;
 
-    banner.classList.remove('hidden');
-    banner.innerHTML = `
-      <div class="flex items-center gap-2.5">
-        <span class="w-2 h-2 rounded-full bg-[#64836B]"></span>
-        <div>
-          <span class="text-[#FAF5EE] font-medium">บันทึกล่าสุด: ${t.station}</span>
-          <span class="text-[#A89E93] ml-1.5 font-mono">${t.time} น.</span>
-          <span class="ml-1 text-[11px]">${crowdInfo.emoji}</span>
+    card.classList.remove('hidden');
+    card.innerHTML = `
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-[#64836B]"></span>
+          <span class="text-xs font-semibold text-[#FAF5EE]">บันทึกล่าสุด: ${t.station}</span>
+          <span class="text-xs font-mono text-[#A89E93]">${t.time} น.</span>
         </div>
+        <button id="deferred-edit-btn" class="text-xs font-medium text-[#C86D51] hover:underline flex items-center gap-1">
+          <span>+ โน้ต/แก้ไข</span>
+        </button>
       </div>
-      <button id="banner-edit-btn" class="px-3 py-1 rounded-xl bg-[#3B322D] text-[#C86D51] font-semibold text-xs hover:bg-[#C86D51] hover:text-white transition-all">
-        แก้ไขข้อมูล
-      </button>
+
+      <!-- Quick 1-Tap Crowd Auto-Save Chips -->
+      <div class="grid grid-cols-3 gap-2 pt-1">
+        <button data-crowd="low" class="deferred-crowd-chip py-2 px-1 rounded-xl border text-xs font-medium flex items-center justify-center gap-1 transition-all ${
+          t.crowdLevel === 'low'
+            ? 'bg-[#3B322D] border-[#64836B] text-emerald-300 ring-1 ring-[#64836B]'
+            : 'bg-[#2E2723] border-white/5 text-[#A89E93] hover:text-[#FAF5EE]'
+        }">
+          <span>🟢</span> <span>โล่ง</span>
+        </button>
+
+        <button data-crowd="medium" class="deferred-crowd-chip py-2 px-1 rounded-xl border text-xs font-medium flex items-center justify-center gap-1 transition-all ${
+          t.crowdLevel === 'medium'
+            ? 'bg-[#3B322D] border-[#C9974C] text-amber-300 ring-1 ring-[#C9974C]'
+            : 'bg-[#2E2723] border-white/5 text-[#A89E93] hover:text-[#FAF5EE]'
+        }">
+          <span>🟡</span> <span>ปานกลาง</span>
+        </button>
+
+        <button data-crowd="high" class="deferred-crowd-chip py-2 px-1 rounded-xl border text-xs font-medium flex items-center justify-center gap-1 transition-all ${
+          t.crowdLevel === 'high'
+            ? 'bg-[#3B322D] border-[#C25745] text-rose-300 ring-1 ring-[#C25745]'
+            : 'bg-[#2E2723] border-white/5 text-[#A89E93] hover:text-[#FAF5EE]'
+        }">
+          <span>🔴</span> <span>แน่นมาก</span>
+        </button>
+      </div>
     `;
 
-    banner.querySelector('#banner-edit-btn')?.addEventListener('click', () => {
+    // Bind Edit button
+    card.querySelector('#deferred-edit-btn')?.addEventListener('click', () => {
       if (this.onEditTripCallback && this.lastLoggedTrip) {
         this.onEditTripCallback(this.lastLoggedTrip);
       }
+    });
+
+    // Bind 1-Tap Crowd Chips
+    card.querySelectorAll('.deferred-crowd-chip').forEach((chip) => {
+      chip.addEventListener('click', async () => {
+        triggerHaptic('light');
+        const crowd = chip.getAttribute('data-crowd') as CrowdLevel;
+        if (this.lastLoggedTrip && this.onCrowdUpdatedCallback) {
+          await this.onCrowdUpdatedCallback(this.lastLoggedTrip, crowd);
+          this.lastLoggedTrip.crowdLevel = crowd;
+          this.updateDeferredCard();
+          Toast.show(`ระบุความหนาแน่น: ${CROWD_LABELS[crowd].label}`, 'info');
+        }
+      });
     });
   }
 }
