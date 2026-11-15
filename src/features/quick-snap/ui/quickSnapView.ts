@@ -48,12 +48,9 @@ export class QuickSnapView {
         <!-- Top Section: Clean Header (No Emojis / No Clutter) & Clock -->
         <div class="space-y-4 pt-1">
           <!-- Minimal Top Bar without clutter -->
-          <div class="flex items-center justify-between text-xs text-[#A89E93]">
-            <div class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-[#64836B]"></span>
-              <span class="font-medium tracking-wide">MRT Blue Line</span>
-            </div>
-            <span class="text-[11px] text-[#A89E93]/60 font-mono">Precision Logger</span>
+          <div class="flex items-center gap-2 text-xs text-[#A89E93]">
+            <span class="w-2 h-2 rounded-full bg-[#64836B]"></span>
+            <span class="font-medium tracking-wide">MRT Blue Line</span>
           </div>
 
           <!-- Clean Hero Digital Clock -->
@@ -338,7 +335,7 @@ export class QuickSnapView {
       }
     });
 
-    // Bind 1-Tap Crowd Chips
+    // Bind 1-Tap Crowd Chips (Silent instant update with haptic feedback, no popups)
     card.querySelectorAll('.deferred-crowd-chip').forEach((chip) => {
       chip.addEventListener('click', async () => {
         triggerHaptic('light');
@@ -348,7 +345,6 @@ export class QuickSnapView {
             await this.onCrowdUpdatedCallback(this.lastLoggedTrip, crowd);
             this.lastLoggedTrip.crowdLevel = crowd;
             this.updateDeferredCard();
-            Toast.show(`บันทึกสถานะ: ${CROWD_LABELS[crowd].label}`, 'success');
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการบันทึก';
             Toast.show(msg, 'error');

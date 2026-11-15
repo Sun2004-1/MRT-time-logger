@@ -119,9 +119,8 @@ class App {
     this.metadataModal.open(trip, async (id: string, crowdLevel: CrowdLevel, notes: string) => {
       try {
         const updated = await this.historyService.updateDeferredMetadata(id, crowdLevel, notes);
-        Toast.show('บันทึกข้อมูลเรียบร้อย ✓', 'success');
 
-        // Refresh both views
+        // Refresh both views silently without intrusive popups
         await this.historyView.loadAndRender();
         this.quickSnapView.setLastLoggedTrip(updated);
       } catch (err: unknown) {
