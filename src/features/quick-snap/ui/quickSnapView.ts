@@ -41,26 +41,19 @@ export class QuickSnapView {
 
   public render(): void {
     const route = this.quickSnapService.getRouteState();
-    const isMorning = route.tripType === 'morning';
 
     this.container.innerHTML = `
       <div class="flex flex-col h-[calc(100vh-64px)] justify-between max-w-md mx-auto px-5 py-4 safe-top pb-6">
         
-        <!-- Top Section: Minimalist Header & Live Clock -->
+        <!-- Top Section: Clean Header (No Emojis / No Clutter) & Clock -->
         <div class="space-y-4 pt-1">
-          <!-- Top subtle commute indicator -->
+          <!-- Minimal Top Bar without clutter -->
           <div class="flex items-center justify-between text-xs text-[#A89E93]">
             <div class="flex items-center gap-2">
               <span class="w-2 h-2 rounded-full bg-[#64836B]"></span>
               <span class="font-medium tracking-wide">MRT Blue Line</span>
             </div>
-            <span id="route-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
-              isMorning
-                ? 'bg-[#64836B]/20 text-[#64836B] border border-[#64836B]/30'
-                : 'bg-[#C9974C]/20 text-[#C9974C] border border-[#C9974C]/30'
-            }">
-              ${isMorning ? '🌅 ช่วงเช้า' : '🌇 ช่วงเย็น'}
-            </span>
+            <span class="text-[11px] text-[#A89E93]/60 font-mono">Precision Logger</span>
           </div>
 
           <!-- Clean Hero Digital Clock -->
@@ -73,7 +66,7 @@ export class QuickSnapView {
             </div>
           </div>
 
-          <!-- Minimalist Inset Route Pill -->
+          <!-- Inset Route Pill -->
           <div class="bg-[#231E1B]/90 backdrop-blur-xl border border-white/5 rounded-2xl p-3 shadow-lg">
             <div class="flex items-center justify-between gap-2">
               <!-- Origin Station -->
@@ -112,7 +105,7 @@ export class QuickSnapView {
           </div>
         </div>
 
-        <!-- Center: Hero Shutter Button (Uncluttered, Room to Breathe) -->
+        <!-- Center: Hero Shutter Button (Clean Breathing Room) -->
         <div class="flex flex-col items-center justify-center my-auto py-4">
           <div class="relative flex items-center justify-center">
             <!-- Ambient Glow -->
@@ -136,7 +129,7 @@ export class QuickSnapView {
           </div>
         </div>
 
-        <!-- Bottom: Deferred Floating Quick-Card (Appears only after snapping or when recent trip exists) -->
+        <!-- Bottom: Deferred Floating Quick-Card -->
         <div id="deferred-container" class="min-h-[72px] flex flex-col justify-end">
           <div id="deferred-floating-card" class="hidden bg-[#231E1B] border border-white/10 rounded-2xl p-3.5 shadow-2xl transition-all duration-300">
             <!-- Populated dynamically -->
@@ -232,18 +225,12 @@ export class QuickSnapView {
     const destName = this.container.querySelector('#dest-name');
     const destCode = this.container.querySelector('#dest-code');
     const dirLabel = this.container.querySelector('#direction-label');
-    const routeBadge = this.container.querySelector('#route-badge');
 
     if (originName) originName.textContent = route.origin;
     if (originCode) originCode.textContent = route.originCode;
     if (destName) destName.textContent = route.destination;
     if (destCode) destCode.textContent = route.destinationCode;
     if (dirLabel) dirLabel.textContent = route.directionLabel;
-
-    if (routeBadge) {
-      const isMorning = route.tripType === 'morning';
-      routeBadge.textContent = isMorning ? '🌅 ช่วงเช้า' : '🌇 ช่วงเย็น';
-    }
   }
 
   private async handleQuickSnap(): Promise<void> {
@@ -302,7 +289,6 @@ export class QuickSnapView {
     }
 
     const t = this.lastLoggedTrip;
-    const crowdInfo = CROWD_LABELS[t.crowdLevel] || CROWD_LABELS.unspecified;
 
     card.classList.remove('hidden');
     card.innerHTML = `
@@ -358,10 +344,15 @@ export class QuickSnapView {
         triggerHaptic('light');
         const crowd = chip.getAttribute('data-crowd') as CrowdLevel;
         if (this.lastLoggedTrip && this.onCrowdUpdatedCallback) {
-          await this.onCrowdUpdatedCallback(this.lastLoggedTrip, crowd);
-          this.lastLoggedTrip.crowdLevel = crowd;
-          this.updateDeferredCard();
-          Toast.show(`ระบุความหนาแน่น: ${CROWD_LABELS[crowd].label}`, 'info');
+          try {
+            await this.onCrowdUpdatedCallback(this.lastLoggedTrip, crowd);
+            this.lastLoggedTrip.crowdLevel = crowd;
+            this.updateDeferredCard();
+            Toast.show(`บันทึกสถานะ: ${CROWD_LABELS[crowd].label}`, 'success');
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการบันทึก';
+            Toast.show(msg, 'error');
+          }
         }
       });
     });

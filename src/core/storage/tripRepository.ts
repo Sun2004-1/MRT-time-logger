@@ -76,26 +76,36 @@ export class TripRepository implements ITripRepository {
     });
   }
 
+  /**
+   * Atomic update within a single IndexedDB transaction
+   * Prevents transaction inactivity errors
+   */
   public async update(id: string, updates: Partial<TripLog>): Promise<TripLog> {
     const { store, tx } = await this.adapter.getStore(APP_CONFIG.STORE_NAME, 'readwrite');
-    const current = await this.getById(id);
-
-    if (!current) {
-      throw new Error(`Trip record with id ${id} not found.`);
-    }
-
-    const updated: TripLog = {
-      ...current,
-      ...updates,
-      // If crowdLevel or notes changed, mark as unsynced so it pushes to Google Sheets
-      synced: updates.synced !== undefined ? updates.synced : false,
-    };
 
     return new Promise((resolve, reject) => {
-      const request = store.put(updated);
-      request.onsuccess = () => resolve(updated);
-      request.onerror = () => reject(request.error);
+      const getReq = store.get(id);
+
+      getReq.onsuccess = () => {
+        const current = getReq.result as TripLog | undefined;
+        if (!current) {
+          return reject(new Error(`ไม่พบรายการบันทึก ID: ${id}`));
+        }
+
+        const updated: TripLog = {
+          ...current,
+          ...updates,
+          synced: updates.synced !== undefined ? updates.synced : false,
+        };
+
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => resolve(updated);
+        putReq.onerror = () => reject(putReq.error);
+      };
+
+      getReq.onerror = () => reject(getReq.error);
       tx.onabort = () => reject(tx.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -115,19 +125,30 @@ export class TripRepository implements ITripRepository {
   }
 
   public async markAsSynced(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
     const { store, tx } = await this.adapter.getStore(APP_CONFIG.STORE_NAME, 'readwrite');
     const now = Date.now();
 
-    for (const id of ids) {
-      const item = await this.getById(id);
-      if (item) {
-        item.synced = true;
-        item.syncedAt = now;
-        store.put(item);
-      }
-    }
-
     return new Promise((resolve, reject) => {
+      let pending = ids.length;
+
+      ids.forEach((id) => {
+        const getReq = store.get(id);
+        getReq.onsuccess = () => {
+          const item = getReq.result as TripLog | undefined;
+          if (item) {
+            item.synced = true;
+            item.syncedAt = now;
+            store.put(item);
+          }
+          pending--;
+          if (pending === 0) {
+            // All items processed
+          }
+        };
+        getReq.onerror = () => reject(getReq.error);
+      });
+
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);

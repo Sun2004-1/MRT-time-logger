@@ -45,7 +45,9 @@ class App {
         this.openMetadataEditor(trip);
       },
       onCrowdUpdated: async (trip: TripLog, crowd: CrowdLevel) => {
-        await this.historyService.updateDeferredMetadata(trip.id, crowd, trip.notes || '');
+        const updated = await this.historyService.updateDeferredMetadata(trip.id, crowd, trip.notes || '');
+        this.quickSnapView.setLastLoggedTrip(updated);
+        await this.historyView.loadAndRender();
       },
     });
 
@@ -115,14 +117,16 @@ class App {
 
   private openMetadataEditor(trip: TripLog): void {
     this.metadataModal.open(trip, async (id: string, crowdLevel: CrowdLevel, notes: string) => {
-      await this.historyService.updateDeferredMetadata(id, crowdLevel, notes);
-      Toast.show('อัปเดตข้อมูลเพิ่มเติมเรียบร้อย', 'success');
+      try {
+        const updated = await this.historyService.updateDeferredMetadata(id, crowdLevel, notes);
+        Toast.show('บันทึกข้อมูลเรียบร้อย ✓', 'success');
 
-      // Refresh both views
-      await this.historyView.loadAndRender();
-      const updated = await this.repository.getById(id);
-      if (updated) {
+        // Refresh both views
+        await this.historyView.loadAndRender();
         this.quickSnapView.setLastLoggedTrip(updated);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการบันทึก';
+        Toast.show(msg, 'error');
       }
     });
   }
