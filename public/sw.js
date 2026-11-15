@@ -1,15 +1,15 @@
-const CACHE_NAME = 'mrt-logger-v1';
+const CACHE_NAME = 'mrt-logger-v2';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/src/main.ts',
-  '/manifest.json'
+  './',
+  './index.html',
+  './manifest.json',
+  './favicon.svg'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+      return cache.addAll(STATIC_ASSETS).catch((err) => console.warn('Cache error:', err));
     })
   );
   self.skipWaiting();
@@ -31,7 +31,6 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Stale-while-revalidate strategy for local app assets
   if (event.request.method === 'GET') {
     event.respondWith(
       caches.match(event.request).then((cachedResponse) => {
