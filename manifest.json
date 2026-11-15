@@ -1,0 +1,19 @@
+{
+  "name": "MRT Time Logger",
+  "short_name": "MRT Logger",
+  "description": "High-precision MRT arrival time recorder for Bangkok MRT Blue Line",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#171412",
+  "theme_color": "#171412",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
